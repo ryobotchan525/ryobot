@@ -84,11 +84,27 @@ def generate_it_news_bubbles():
 # === SUUMO（不動産）ニュース ===
 def generate_real_estate_bubbles():
     feed_url = "https://suumo.jp/journal/rss/"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
     feed = feedparser.parse(feed_url)
-    return [
-        create_bubble(entry.title, entry.link, get_og_image(entry.link))
-        for entry in feed.entries[:5]
-    ]
+    bubbles = []
+
+    for entry in feed.entries[:5]:
+        title = entry.title
+        link = entry.link
+        try:
+            res = requests.get(link, headers=headers, timeout=5)
+            soup = BeautifulSoup(res.text, "html.parser")
+            og_image = soup.find("meta", property="og:image")
+            image_url = og_image["content"] if og_image else "https://placehold.jp/600x400.png"
+        except:
+            image_url = "https://placehold.jp/600x400.png"
+
+        bubble = create_bubble(title, link, image_url)
+        bubbles.append(bubble)
+
+    return bubbles
 
 # === ジャンル選択ボタン送信 ===
 def send_genre_selector(user_id):

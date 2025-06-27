@@ -14,22 +14,38 @@ from linebot.models import (
 
 app = Flask(__name__)
 
-# === LINE環境変数 ===
+# === 環境変数 ===
 LINE_CHANNEL_SECRET = os.getenv("YOUR_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("YOUR_CHANNEL_ACCESS_TOKEN")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# === デフォルト画像URL ===
 DEFAULT_IMAGE_URL = "https://placehold.jp/600x400.png"
 
-# === summary内のimgタグから画像抽出 ===
+# === GIGAZINE用：記事ページからog:imageを抽出 ===
+def get_og_image(url):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/115.0.0.0 Safari/537.36"
+        )
+    }
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
+        tag = soup.find("meta", property="og:image")
+        return tag["content"] if tag else DEFAULT_IMAGE_URL
+    except:
+        return DEFAULT_IMAGE_URL
+
+# === SUUMO用：summaryから画像URLを抽出 ===
 def extract_image_from_summary(summary):
     match = re.search(r'<img[^>]+src="([^"]+)"', summary)
     return match.group(1) if match else DEFAULT_IMAGE_URL
 
-# === Flexバブル生成 ===
+# === Flexバブル共通生成 ===
 def create_bubble(title, link, image_url):
     return {
         "type": "bubble",
@@ -89,27 +105,23 @@ def generate_real_estate_bubbles():
         link = entry.link
         summary = entry.get("summary", "")
         image_url = extract_image_from_summary(summary)
-        bubble = create_bubble(title, link, image_url)
-        bubbles.append(bubble)
+        bubbles.append(create_bubble(title, link, image_url))
 
     return bubbles
 
-# === ITニュース（GIGAZINE） ===
+# === GIGAZINE ITニュース ===
 def generate_it_news_bubbles():
     feed_url = "https://gigazine.net/news/rss_2.0/"
     feed = feedparser.parse(feed_url)
     bubbles = []
-
     for entry in feed.entries[:5]:
         title = entry.title
         link = entry.link
-        image_url = extract_image_from_summary(entry.get("summary", ""))
-        bubble = create_bubble(title, link, image_url)
-        bubbles.append(bubble)
-
+        image_url = get_og_image(link)
+        bubbles.append(create_bubble(title, link, image_url))
     return bubbles
 
-# === ジャンル選択のQuick Reply ===
+# === クイックリプライ送信 ===
 def send_genre_selector(user_id):
     message = TextSendMessage(
         text="📚 見たいジャンルを選んでください！",
@@ -135,12 +147,12 @@ def callback():
     threading.Thread(target=process).start()
     return "OK", 200
 
-# === メッセージ受信時：ジャンル選択を表示 ===
+# === メッセージ受信：ジャンル選択を表示 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     send_genre_selector(event.source.user_id)
 
-# === ジャンル選択Postback処理 ===
+# === Postback処理：ジャンルごとにFlex送信 ===
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -165,16 +177,16 @@ def handle_postback(event):
         )
         return
 
-    flex = {
+    carousel = {
         "type": "carousel",
         "contents": bubbles
     }
     line_bot_api.push_message(
         event.source.user_id,
-        FlexSendMessage(alt_text=alt, contents=flex)
+        FlexSendMessage(alt_text=alt, contents=carousel)
     )
 
-# === Render用ヘルスチェック ===
+# === 動作確認用 ===
 @app.route("/", methods=["GET"])
 def healthcheck():
     return "Bot is alive", 200
@@ -182,4 +194,3 @@ def healthcheck():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-

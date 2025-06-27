@@ -1,28 +1,57 @@
-from flask import Flask, request # type: ignore
-from linebot import LineBotApi, WebhookHandler # type: ignore
-from linebot.exceptions import InvalidSignatureError # type: ignore
-from linebot.models import TextMessage, MessageEvent, TextSendMessage # type: ignore
+import os
+import threading
+from flask import Flask, request
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import PostbackEvent, MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi("YOUR_CHANNEL_ACCESS_TOKEN")
-handler = WebhookHandler("YOUR_CHANNEL_SECRET")
+# === 環境変数からアクセストークンとシークレットを取得 ===
+line_bot_api = LineBotApi(os.getenv("YOUR_CHANNEL_ACCESS_TOKEN"))
+handler = WebhookHandler(os.getenv("YOUR_CHANNEL_SECRET"))
 
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers["X-Line-Signature"]
     body = request.get_data(as_text=True)
 
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        return "Invalid signature", 400
+    # === 非同期でイベント処理 ===
+    def handle_event():
+        try:
+            handler.handle(body, signature)
+        except InvalidSignatureError as e:
+            print("署名エラー:", e)
+
+    threading.Thread(target=handle_event).start()
 
     return "OK", 200
 
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="こんにちは！"))
+# === 例：ジャンル選択ボタンのPostback処理 ===
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    data = event.postback.data
+    if data == "genre=real_estate":
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="🏠 不動産ニュースをお送りします！")
+        )
+    elif data == "genre=it":
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="💻 ITニュースをお届けします！")
+        )
+    else:
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="⚠️ 不明なジャンルが選択されました")
+        )
+
+# === 動作確認用エンドポイント（オプション）===
+@app.route("/", methods=["GET"])
+def healthcheck():
+    return "Bot is alive", 200
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

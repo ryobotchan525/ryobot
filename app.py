@@ -4,7 +4,6 @@ import requests
 import feedparser
 from bs4 import BeautifulSoup
 from flask import Flask, request
-from datetime import datetime
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
@@ -27,9 +26,9 @@ def get_og_image(url):
         res = requests.get(url, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
         tag = soup.find("meta", property="og:image")
-        return tag["content"] if tag else "https://yourdomain.com/default.jpg"
-    except:
-        return "https://yourdomain.com/default.jpg"
+        return tag["content"] if tag else "https://placehold.jp/600x400.png"
+    except Exception:
+        return "https://placehold.jp/600x400.png"
 
 # === Flexバブル生成（共通） ===
 def create_bubble(title, link, image_url):
@@ -73,25 +72,31 @@ def create_bubble(title, link, image_url):
         }
     }
 
-# === ITニュース（GIGAZINE） ===
+# === GIGAZINE（IT）ニュース ===
 def generate_it_news_bubbles():
     feed_url = "https://gigazine.net/news/rss_2.0/"
     feed = feedparser.parse(feed_url)
-    return [create_bubble(entry.title, entry.link, get_og_image(entry.link)) for entry in feed.entries[:5]]
+    return [
+        create_bubble(entry.title, entry.link, get_og_image(entry.link))
+        for entry in feed.entries[:5]
+    ]
 
-# === 不動産ニュース（SUUMO） ===
+# === SUUMO（不動産）ニュース ===
 def generate_real_estate_bubbles():
     feed_url = "https://suumo.jp/journal/rss/"
     feed = feedparser.parse(feed_url)
-    return [create_bubble(entry.title, entry.link, get_og_image(entry.link)) for entry in feed.entries[:5]]
+    return [
+        create_bubble(entry.title, entry.link, get_og_image(entry.link))
+        for entry in feed.entries[:5]
+    ]
 
-# === ジャンル選択クイックリプライ ===
+# === ジャンル選択ボタン送信 ===
 def send_genre_selector(user_id):
     message = TextSendMessage(
         text="📚 見たいジャンルを選んでください！",
         quick_reply=QuickReply(items=[
             QuickReplyButton(action=PostbackAction(label="不動産", data="genre=real_estate")),
-            QuickReplyButton(action=PostbackAction(label="IT", data="genre=it")),
+            QuickReplyButton(action=PostbackAction(label="IT", data="genre=it"))
         ])
     )
     line_bot_api.push_message(user_id, message)
@@ -99,7 +104,7 @@ def send_genre_selector(user_id):
 # === Webhookエントリポイント ===
 @app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers.get("X-Line-Signature")
     body = request.get_data(as_text=True)
 
     def process():
@@ -111,12 +116,12 @@ def callback():
     threading.Thread(target=process).start()
     return "OK", 200
 
-# === メッセージ受信時：ジャンル選択を送信 ===
+# === ユーザーが何か話しかけてきたとき：ジャンル選択を送る ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     send_genre_selector(event.source.user_id)
 
-# === Postback受信時：ジャンルに応じてFlex送信 ===
+# === ジャンル選択のPostbackイベント処理 ===
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -134,11 +139,18 @@ def handle_postback(event):
         )
         return
 
-    carousel = {
+    if not bubbles:
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="⚠️ ニュースが取得できませんでした。しばらくしてからもう一度お試しください。")
+        )
+        return
+
+    flex = {
         "type": "carousel",
         "contents": bubbles
     }
-    message = FlexSendMessage(alt_text=alt, contents=carousel)
+    message = FlexSendMessage(alt_text=alt, contents=flex)
     line_bot_api.push_message(event.source.user_id, message)
 
 # === Render用ヘルスチェック ===
@@ -149,3 +161,4 @@ def healthcheck():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+

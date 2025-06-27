@@ -1,5 +1,6 @@
 import os
 import threading
+import re
 import requests
 import feedparser
 from bs4 import BeautifulSoup
@@ -20,24 +21,15 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("YOUR_CHANNEL_ACCESS_TOKEN")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# === og:image取得 ===
-def get_og_image(url):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/115.0.0.0 Safari/537.36"
-        )
-    }
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
-        tag = soup.find("meta", property="og:image")
-        return tag["content"] if tag else "https://placehold.jp/600x400.png"
-    except:
-        return "https://placehold.jp/600x400.png"
+# === デフォルト画像URL ===
+DEFAULT_IMAGE_URL = "https://placehold.jp/600x400.png"
 
-# === Flexバブル生成（共通） ===
+# === summary内のimgタグから画像抽出 ===
+def extract_image_from_summary(summary):
+    match = re.search(r'<img[^>]+src="([^"]+)"', summary)
+    return match.group(1) if match else DEFAULT_IMAGE_URL
+
+# === Flexバブル生成 ===
 def create_bubble(title, link, image_url):
     return {
         "type": "bubble",
@@ -79,52 +71,49 @@ def create_bubble(title, link, image_url):
         }
     }
 
-# === GIGAZINE（IT）ニュース ===
+# === SUUMO不動産ニュース ===
+def generate_real_estate_bubbles():
+    feed_url = "https://suumo.jp/journal/feed/"
+    feed = feedparser.parse(feed_url)
+    bubbles = []
+
+    for entry in feed.entries[:5]:
+        title = entry.title.strip()
+        link = entry.link
+        summary = entry.get("summary", "")
+        image_url = extract_image_from_summary(summary)
+        bubble = create_bubble(title, link, image_url)
+        bubbles.append(bubble)
+
+    return bubbles
+
+# === ITニュース（GIGAZINE） ===
 def generate_it_news_bubbles():
     feed_url = "https://gigazine.net/news/rss_2.0/"
-    feed = feedparser.parse(feed_url)
-    return [
-        create_bubble(entry.title, entry.link, get_og_image(entry.link))
-        for entry in feed.entries[:5]
-    ]
-
-# === SUUMO（不動産）ニュース ===
-def generate_real_estate_bubbles():
-    feed_url = "https://suumo.jp/journal/rss/"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
     feed = feedparser.parse(feed_url)
     bubbles = []
 
     for entry in feed.entries[:5]:
         title = entry.title
         link = entry.link
-        try:
-            res = requests.get(link, headers=headers, timeout=5)
-            soup = BeautifulSoup(res.text, "html.parser")
-            og_image = soup.find("meta", property="og:image")
-            image_url = og_image["content"] if og_image else "https://placehold.jp/600x400.png"
-        except:
-            image_url = "https://placehold.jp/600x400.png"
-
+        image_url = extract_image_from_summary(entry.get("summary", ""))
         bubble = create_bubble(title, link, image_url)
         bubbles.append(bubble)
 
     return bubbles
 
-# === ジャンル選択ボタン送信 ===
+# === ジャンル選択のQuick Reply ===
 def send_genre_selector(user_id):
     message = TextSendMessage(
         text="📚 見たいジャンルを選んでください！",
         quick_reply=QuickReply(items=[
             QuickReplyButton(action=PostbackAction(label="不動産", data="genre=real_estate")),
-            QuickReplyButton(action=PostbackAction(label="IT", data="genre=it"))
+            QuickReplyButton(action=PostbackAction(label="IT", data="genre=it")),
         ])
     )
     line_bot_api.push_message(user_id, message)
 
-# === Webhookエントリポイント ===
+# === Webhookエンドポイント ===
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature")
@@ -139,12 +128,12 @@ def callback():
     threading.Thread(target=process).start()
     return "OK", 200
 
-# === ユーザーが何か話しかけてきたとき：ジャンル選択を送る ===
+# === メッセージ受信時：ジャンル選択を表示 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     send_genre_selector(event.source.user_id)
 
-# === ジャンル選択のPostbackイベント処理 ===
+# === ジャンル選択Postback処理 ===
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -165,7 +154,7 @@ def handle_postback(event):
     if not bubbles:
         line_bot_api.push_message(
             event.source.user_id,
-            TextSendMessage(text="⚠️ ニュースが取得できませんでした。しばらくしてからもう一度お試しください。")
+            TextSendMessage(text="⚠️ ニュースが取得できませんでした。")
         )
         return
 
@@ -173,8 +162,10 @@ def handle_postback(event):
         "type": "carousel",
         "contents": bubbles
     }
-    message = FlexSendMessage(alt_text=alt, contents=flex)
-    line_bot_api.push_message(event.source.user_id, message)
+    line_bot_api.push_message(
+        event.source.user_id,
+        FlexSendMessage(alt_text=alt, contents=flex)
+    )
 
 # === Render用ヘルスチェック ===
 @app.route("/", methods=["GET"])

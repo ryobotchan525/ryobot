@@ -74,9 +74,16 @@ def create_bubble(title, link, image_url):
 # === SUUMO不動産ニュース ===
 def generate_real_estate_bubbles():
     feed_url = "https://suumo.jp/journal/feed/"
-    feed = feedparser.parse(feed_url)
-    bubbles = []
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(feed_url, headers=headers, timeout=5)
+        cleaned = "\n".join(line for line in res.text.splitlines() if line.strip())
+        feed = feedparser.parse(cleaned)
+    except Exception as e:
+        print("RSS取得エラー:", e)
+        return []
 
+    bubbles = []
     for entry in feed.entries[:5]:
         title = entry.title.strip()
         link = entry.link

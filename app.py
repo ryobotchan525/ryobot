@@ -22,12 +22,19 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # === og:image取得 ===
 def get_og_image(url):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/115.0.0.0 Safari/537.36"
+        )
+    }
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
         tag = soup.find("meta", property="og:image")
         return tag["content"] if tag else "https://placehold.jp/600x400.png"
-    except Exception:
+    except:
         return "https://placehold.jp/600x400.png"
 
 # === Flexバブル生成（共通） ===

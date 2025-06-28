@@ -92,18 +92,6 @@ def create_bubble(title, link, image_url):
 def generate_real_estate_bubbles():
     bubbles = []
 
-    # --- SUUMO ---
-    try:
-        url = "https://suumo.jp/journal/feed/"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=5)
-        cleaned = "\n".join(line for line in res.text.splitlines() if line.strip())
-        feed = feedparser.parse(cleaned)
-        suumo = [create_bubble(e.title, e.link, extract_image_from_summary(e.get("summary", ""))) for e in feed.entries[:5]]
-        bubbles.extend(suumo)
-    except Exception as e:
-        print("SUUMO取得エラー:", e)
-
     # --- R.E.port ---
     try:
         url = "https://www.re-port.net/"

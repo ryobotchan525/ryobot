@@ -114,7 +114,7 @@ def generate_entertainment_bubbles():
 
 # ④ 経済・ビジネス（日経ビジネス）
 def generate_business_bubbles():
-    feed_url = "https://business.nikkei.com/rss/"
+    feed_url = "https://toyokeizai.net/list/feed/rss"
     feed = feedparser.parse(feed_url)
     return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
 
@@ -132,7 +132,7 @@ def generate_game_bubbles():
 
 # ⑦ 教育・学び（NHK for School）
 def generate_education_bubbles():
-    feed_url = "https://www.nhk.or.jp/school/rss/index.xml"
+    feed_url = "https://reseed.resemom.jp/rss/index.rdf"
     feed = feedparser.parse(feed_url)
     return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
 

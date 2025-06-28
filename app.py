@@ -87,18 +87,37 @@ def create_bubble(title, link, image_url):
             ]
         }
     }
-# ① 不動産（SUUMO）
+
 def generate_real_estate_bubbles():
-    url = "https://suumo.jp/journal/feed/"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
+    bubbles = []
+    
+    # ① 不動産（SUUMO）
+   try:
+        url = "https://suumo.jp/journal/feed/"
+        headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(url, headers=headers, timeout=5)
         cleaned = "\n".join(line for line in res.text.splitlines() if line.strip())
         feed = feedparser.parse(cleaned)
+        suumo = [create_bubble(e.title, e.link, extract_image_from_summary(e.get("summary", ""))) for e in feed.entries[:5]]
+        bubbles.extend(suumo)
     except Exception as e:
         print("SUUMO取得エラー:", e)
-        return []
-    return [create_bubble(e.title, e.link, extract_image_from_summary(e.get("summary", ""))) for e in feed.entries[:5]]
+
+    # --- R.E.port ---
+    try:
+        url = "https://www.re-port.net/"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
+        articles = soup.select(".newsList li")[:5]
+        for a in articles:
+            title = a.select_one("a").get_text(strip=True)
+            link = "https://www.re-port.net" + a.select_one("a")["href"]
+            bubbles.append(create_bubble(title, link, get_og_image(link)))
+    except Exception as e:
+        print("R.E.port取得エラー:", e)
+
+    return bubbles
 
 # ② IT（GIGAZINE）
 def generate_it_news_bubbles():

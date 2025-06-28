@@ -14,15 +14,17 @@ from linebot.models import (
 
 app = Flask(__name__)
 
+# 環境変数からLINE情報を取得
 LINE_CHANNEL_SECRET = os.getenv("YOUR_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("YOUR_CHANNEL_ACCESS_TOKEN")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
+# 画像取得エラー時のデフォルト画像
 DEFAULT_IMAGE_URL = "https://placehold.jp/600x400.png"
 
-# GIGAZINE: 記事ページから og:image を取得
+# === GIGAZINEなどの記事ページからog:imageを取得（IT・海外・ゲームなどで使用） ===
 def get_og_image(url):
     headers = {
         "User-Agent": (
@@ -39,12 +41,12 @@ def get_og_image(url):
     except:
         return DEFAULT_IMAGE_URL
 
-# SUUMO: summaryタグ内から画像抽出
+# === SUUMO用：summaryタグ内のimg要素から画像URLを抽出 ===
 def extract_image_from_summary(summary):
     match = re.search(r'<img[^>]+src="([^"]+)"', summary)
     return match.group(1) if match else DEFAULT_IMAGE_URL
 
-# Flexバブル生成（共通）
+# === 各ニュースカード（バブル）共通生成 ===
 def create_bubble(title, link, image_url):
     return {
         "type": "bubble",
@@ -85,8 +87,7 @@ def create_bubble(title, link, image_url):
             ]
         }
     }
-
-# SUUMO 不動産ニュース
+# ① 不動産（SUUMO）
 def generate_real_estate_bubbles():
     url = "https://suumo.jp/journal/feed/"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -97,105 +98,99 @@ def generate_real_estate_bubbles():
     except Exception as e:
         print("SUUMO取得エラー:", e)
         return []
+    return [create_bubble(e.title, e.link, extract_image_from_summary(e.get("summary", ""))) for e in feed.entries[:5]]
 
-    bubbles = []
-    for entry in feed.entries[:5]:
-        title = entry.title.strip()
-        link = entry.link
-        summary = entry.get("summary", "")
-        image_url = extract_image_from_summary(summary)
-        bubbles.append(create_bubble(title, link, image_url))
-    return bubbles
-
-# GIGAZINE ITニュース
+# ② IT（GIGAZINE）
 def generate_it_news_bubbles():
     feed_url = "https://gigazine.net/news/rss_2.0/"
     feed = feedparser.parse(feed_url)
-    bubbles = []
-    for entry in feed.entries[:5]:
-        title = entry.title
-        link = entry.link
-        image_url = get_og_image(link)
-        bubbles.append(create_bubble(title, link, image_url))
-    return bubbles
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
 
-# Flexでジャンル選択を送信
+# ③ エンタメ（映画.com）
+def generate_entertainment_bubbles():
+    feed_url = "https://eiga.com/rss/news/"
+    feed = feedparser.parse(feed_url)
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
+
+# ④ 経済・ビジネス（日経ビジネス）
+def generate_business_bubbles():
+    feed_url = "https://business.nikkei.com/rss/"
+    feed = feedparser.parse(feed_url)
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
+
+# ⑤ 海外ニュース（NHK World 日本語）
+def generate_world_news_bubbles():
+    feed_url = "https://www3.nhk.or.jp/rss/news/cat0.xml"
+    feed = feedparser.parse(feed_url)
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
+
+# ⑥ ゲームニュース（4Gamer.net）
+def generate_game_bubbles():
+    feed_url = "https://www.4gamer.net/rss/index.xml"
+    feed = feedparser.parse(feed_url)
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
+
+# ⑦ 教育・学び（NHK for School）
+def generate_education_bubbles():
+    feed_url = "https://www.nhk.or.jp/school/rss/index.xml"
+    feed = feedparser.parse(feed_url)
+    return [create_bubble(e.title, e.link, get_og_image(e.link)) for e in feed.entries[:5]]
+
+# ジャンル選択Flexメッセージ
 def send_genre_flex(user_id):
-    bubble_real_estate = {
-        "type": "bubble",
-        "hero": {
-            "type": "image",
-            "url": "https://placehold.jp/600x400.png?text=🏠",
-            "size": "full",
-            "aspectMode": "cover",
-            "aspectRatio": "1.51:1"
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": "不動産ニュース", "weight": "bold", "size": "lg"}
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "color": "#00B900",
-                    "action": {
-                        "type": "postback",
-                        "label": "不動産を見る",
-                        "data": "genre=real_estate"
+    def genre_bubble(title, label, data, icon, color):
+        return {
+            "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": f"https://placehold.jp/600x400.png?text={icon}",
+                "size": "full",
+                "aspectMode": "cover",
+                "aspectRatio": "1.51:1"
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": title, "weight": "bold", "size": "lg"}
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": color,
+                        "action": {
+                            "type": "postback",
+                            "label": label,
+                            "data": data
+                        }
                     }
-                }
-            ]
+                ]
+            }
         }
-    }
 
-    bubble_it = {
-        "type": "bubble",
-        "hero": {
-            "type": "image",
-            "url": "https://placehold.jp/600x400.png?text=💻",
-            "size": "full",
-            "aspectMode": "cover",
-            "aspectRatio": "1.51:1"
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": "ITニュース", "weight": "bold", "size": "lg"}
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "color": "#0055FF",
-                    "action": {
-                        "type": "postback",
-                        "label": "ITを見る",
-                        "data": "genre=it"
-                    }
-                }
-            ]
-        }
-    }
+    bubbles = [
+        genre_bubble("不動産ニュース", "不動産を見る", "genre=real_estate", "🏠", "#00B900"),
+        genre_bubble("ITニュース", "ITを見る", "genre=it", "💻", "#0055FF"),
+        genre_bubble("エンタメニュース", "エンタメを見る", "genre=entertainment", "🎬", "#FF4081"),
+        genre_bubble("ビジネスニュース", "ビジネスを見る", "genre=business", "📈", "#FFA000"),
+        genre_bubble("海外ニュース", "海外を見る", "genre=world", "🌍", "#7B1FA2"),
+        genre_bubble("ゲームニュース", "ゲームを見る", "genre=game", "🎮", "#C2185B"),
+        genre_bubble("教育・学び", "教育を見る", "genre=education", "📚", "#0288D1")
+    ]
 
-    carousel = {"type": "carousel", "contents": [bubble_real_estate, bubble_it]}
+    carousel = {"type": "carousel", "contents": bubbles}
+
     line_bot_api.push_message(
         user_id,
         FlexSendMessage(alt_text="ジャンルを選んでください", contents=carousel)
     )
 
-# Webhook
+# Webhookエンドポイント
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature")
@@ -210,22 +205,37 @@ def callback():
     threading.Thread(target=process).start()
     return "OK", 200
 
-# テキスト送信 → Flexジャンル選択を表示
+# ユーザーが何かメッセージを送ったとき → ジャンル選択Flexを送信
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     send_genre_flex(event.source.user_id)
 
-# Postback → Flexでニュース配信
+# Postback処理：選ばれたジャンルに応じてFlexニュースを送信
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
 
-    if data == "genre=it":
-        bubbles = generate_it_news_bubbles()
-        alt = "💻 ITニュースをお届け！"
-    elif data == "genre=real_estate":
+    if data == "genre=real_estate":
         bubbles = generate_real_estate_bubbles()
         alt = "🏠 不動産ニュースをお届け！"
+    elif data == "genre=it":
+        bubbles = generate_it_news_bubbles()
+        alt = "💻 ITニュースをお届け！"
+    elif data == "genre=entertainment":
+        bubbles = generate_entertainment_bubbles()
+        alt = "🎬 エンタメニュースをお届け！"
+    elif data == "genre=business":
+        bubbles = generate_business_bubbles()
+        alt = "📈 ビジネスニュースをお届け！"
+    elif data == "genre=world":
+        bubbles = generate_world_news_bubbles()
+        alt = "🌍 海外ニュースをお届け！"
+    elif data == "genre=game":
+        bubbles = generate_game_bubbles()
+        alt = "🎮 ゲームニュースをお届け！"
+    elif data == "genre=education":
+        bubbles = generate_education_bubbles()
+        alt = "📚 教育ニュースをお届け！"
     else:
         line_bot_api.push_message(
             event.source.user_id,
@@ -246,11 +256,12 @@ def handle_postback(event):
         FlexSendMessage(alt_text=alt, contents=carousel)
     )
 
-# Render用の簡易チェック
+# Renderでの稼働確認用エンドポイント（アクセスで "alive" を返す）
 @app.route("/", methods=["GET"])
 def healthcheck():
     return "Bot is alive", 200
 
+# アプリを起動（Render用）
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

@@ -110,10 +110,10 @@ def generate_real_estate_bubbles():
         headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
-        articles = soup.select(".newsList li")[:5]
+        articles = soup.select("ul.newsList li a")[:5]  # ← aタグを直接取得
         for a in articles:
-            title = a.select_one("a").get_text(strip=True)
-            link = "https://www.re-port.net" + a.select_one("a")["href"]
+            title = a.get_text(strip=True)
+            link = "https://www.re-port.net" + a["href"]
             bubbles.append(create_bubble(title, link, get_og_image(link)))
     except Exception as e:
         print("R.E.port取得エラー:", e)
